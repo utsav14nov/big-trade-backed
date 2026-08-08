@@ -1,0 +1,35 @@
+name: CI
+on:
+  push: { branches: [main, develop] }
+  pull_request: { branches: [main] }
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: mandi, POSTGRES_PASSWORD: mandi, POSTGRES_DB: mandi_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://mandi:mandi@localhost:5432/mandi_test
+      JWT_SECRET_KEY: ci-only-secret-not-used-in-prod-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check app/
+      - name: Type check
+        run: mypy app/ || true
+      - name: Security scan (Bandit)
+        run: bandit -r app/ -ll
+      - name: Dependency audit
+        run: pip-audit || true
+      - name: Migrate
+        run: alembic upgrade head
+      - name: Tests
+        run: pytest -q
